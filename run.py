@@ -53,7 +53,62 @@ def main():
     if args.dataset.endswith('.json') or args.dataset.endswith('.jsonl'):
         dataset_id = None
         # Load from local json/jsonl file
-        dataset = datasets.load_dataset('json', data_files=args.dataset)
+        if args.dataset.endswith("nq_train.json"):
+          squad = datasets.load_dataset('squad')
+          nq_data = datasets.load_dataset("json",data_files="./fp-dataset-artifacts/datasets/nq_train.json", field='data')
+          nq_data_limited_unformatted = nq_data['train']
+          ids = []
+          titles = []
+          contexts = []
+          questions = []
+          answers = []
+          for example in nq_data_limited_unformatted['paragraphs']:
+            contexts.append(example[0]['context'])
+            qas = example[0]['qas'][0]
+            questions.append(qas['question'])
+            #answers.append(qas['answers'])
+            titles.append("natural_questioning")
+            ids.append(qas['id'])
+            answers_reshaped = {}
+
+            texts = []
+            answer_starts = []
+
+            for ans in qas['answers']:
+              #print("cuurent ans is: ", ans)
+              if type(ans) == list:
+                #print("found a list")
+                for a in ans:
+                  #print("current a is: ",a)
+                  try:
+                    texts.append(a['text'])
+                    answer_starts.append(a['answer_start'])
+                  except:
+                    pass
+              else:
+                try:
+                  texts.append(ans['text'])
+                  answer_starts.append(ans['answer_start'])
+                except:
+                  pass
+            #print("adding: ",{"answer_start": answer_starts, "text": texts})
+            answers.append({"answer_start": answer_starts, "text": texts})
+
+
+          my_data = {
+              "id": ids,
+              "title": titles,
+              "context": contexts,
+              "question": questions,
+              "answers": answers
+            
+          }
+
+          #print(my_data['answers'])
+          #print(my_data)  
+          dataset = datasets.Dataset.from_dict(my_data, features=squad["train"].features)
+        else:
+          dataset = datasets.load_dataset('json', data_files=args.dataset)
         # By default, the "json" dataset loader places all examples in the train split,
         # so if we want to use a jsonl file for evaluation we need to get the "train" split
         # from the loaded dataset
@@ -66,7 +121,7 @@ def main():
         eval_split = 'validation_matched' if dataset_id == ('glue', 'mnli') else 'validation'
         # Load the raw data
         if args.dataset == 'squad_adversarial':
-          dataset = datasets.load_dataset('squad_adversarial', 'AddSent')
+          dataset = datasets.load_dataset('squad_adversarial', 'AddOneSent')
         else:
           dataset = datasets.load_dataset(*dataset_id)
     
@@ -112,7 +167,10 @@ def main():
             remove_columns=train_dataset.column_names
         )
     if training_args.do_eval:
-        eval_dataset = dataset[eval_split]
+        if args.dataset.endswith('nq_train.json'):
+          eval_dataset = dataset
+        else:
+          eval_dataset = dataset[eval_split]
         if args.max_eval_samples:
             eval_dataset = eval_dataset.select(range(args.max_eval_samples))
         eval_dataset_featurized = eval_dataset.map(
