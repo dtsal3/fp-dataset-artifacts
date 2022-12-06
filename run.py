@@ -8,6 +8,36 @@ import json
 
 NUM_PREPROCESSING_WORKERS = 2
 
+import re
+import string
+def normalize_answer(s):
+    """Lower text and remove punctuation, articles and extra whitespace."""
+
+    def remove_articles(text):
+        return re.sub(r"\b(a|an|the)\b", " ", text)
+
+    def white_space_fix(text):
+        return " ".join(text.split())
+
+    def remove_punc(text):
+        exclude = set(string.punctuation)
+        return "".join(ch for ch in text if ch not in exclude)
+
+    def lower(text):
+        return text.lower()
+
+    return white_space_fix(remove_articles(remove_punc(lower(s))))
+
+def exact_match_score(prediction, ground_truth):
+    return normalize_answer(prediction) == normalize_answer(ground_truth)
+
+def metric_max_over_ground_truths(metric_fn, prediction, ground_truths):
+    scores_for_ground_truths = []
+    for ground_truth in ground_truths:
+        score = metric_fn(prediction, ground_truth)
+        scores_for_ground_truths.append(score)
+    return max(scores_for_ground_truths)
+
 
 def main():
     argp = HfArgumentParser(TrainingArguments)
@@ -246,10 +276,13 @@ def main():
 
         with open(os.path.join(training_args.output_dir, 'eval_predictions.jsonl'), encoding='utf-8', mode='w') as f:
             if args.task == 'qa':
+                print("eval_predictions.label_ids: ", eval_predictions.label_ids[0])
+                print("eval_predictions.predictions: ", eval_predictions.predictions[0])
                 predictions_by_id = {pred['id']: pred['prediction_text'] for pred in eval_predictions.predictions}
                 for example in eval_dataset:
                     example_with_prediction = dict(example)
                     example_with_prediction['predicted_answer'] = predictions_by_id[example['id']]
+                    example_with_prediction['exact_match'] = metric_max_over_ground_truths(exact_match_score, example_with_prediction['predicted_answer'], example_with_prediction['answers']['text'])
                     f.write(json.dumps(example_with_prediction))
                     f.write('\n')
             else:
